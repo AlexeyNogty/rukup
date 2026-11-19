@@ -7,6 +7,7 @@
   "engines": { "node": ">=22.13" },
   "scripts": {
     "start": "node server.js",
+    "cert": "node scripts/make-cert.js",
     "reset-admins": "node server.js --reset-admins",
     "test": "node test/run.js"
   },

@@ -1,6 +1,8 @@
 'use strict';
 // «РукUP» — сервер платформы. Node.js 22: встроенные http и SQLite, WebSocket через модуль ws.
 const http = require('http');
+const https = require('https');
+const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -668,7 +670,12 @@ function handler(req, res) {
     serveStatic(req, res, url.pathname);
   } catch { try { res.writeHead(400, SEC_HEADERS); res.end(); } catch { /* соединение закрыто */ } }
 }
-const server = http.createServer(handler);
+// Если в папке certs лежат key.pem и cert.pem (команда npm run cert), сайт работает по https:
+// так браузер на телефоне в домашней сети разрешит микрофон и камеру для звонков.
+const CERT_DIR = path.join(ROOT, 'certs');
+const certFiles = [path.join(CERT_DIR, 'key.pem'), path.join(CERT_DIR, 'cert.pem')];
+const httpsOn = !TEST && certFiles.every((f) => fs.existsSync(f));
+const server = httpsOn ? https.createServer({ key: fs.readFileSync(certFiles[0]), cert: fs.readFileSync(certFiles[1]) }, handler) : http.createServer(handler);
 server.headersTimeout = 20_000; server.requestTimeout = 30_000; server.keepAliveTimeout = 65_000;
 
 /* ============================== РЕАЛЬНОЕ ВРЕМЯ: РУКИ, ПРИГЛАШЕНИЯ, ЗВОНКИ ============================== */
@@ -874,6 +881,14 @@ process.on('uncaughtException', (e) => console.error('uncaught', e));
 (async () => {
   await seedAdmins(process.argv.includes('--reset-admins'));
   if (process.argv.includes('--reset-admins')) { console.log('Пароли админов обновлены, см. data/admins.txt'); process.exit(0); }
-  server.listen(PORT, HOST, () => { if (!TEST) console.log(`«РукUP» запущен: http://localhost:${PORT}`); });
+  server.listen(PORT, HOST, () => {
+    if (TEST) return;
+    const proto = httpsOn ? 'https' : 'http';
+    const lan = [];
+    for (const list of Object.values(os.networkInterfaces())) for (const a of list || []) if (a.family === 'IPv4' && !a.internal) lan.push(`${proto}://${a.address}:${PORT}`);
+    console.log(`«РукUP» запущен: ${proto}://localhost:${PORT}`);
+    if (lan.length && !process.env.RENDER) console.log(`В домашней сети: ${lan.join(', ')}`);
+    if (!httpsOn && !PUBLIC_MODE) console.log('Для звонков с телефона по Wi-Fi нужен https: выполните npm run cert и перезапустите сервер.');
+  });
 })();
 module.exports = { server };
